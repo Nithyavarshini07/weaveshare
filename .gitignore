@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.local
+.env.*
+! .env.example
+client/dist
+server/dist
+server/uploads/yarn/*
+!server/uploads/yarn/.gitkeep
+npm-debug.log*
+.DS_Store
