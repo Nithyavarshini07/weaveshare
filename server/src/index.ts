@@ -153,4 +153,13 @@ app.get('/api/admin/pricing', authenticateToken, authorizeRoles('ADMIN'), async 
 app.put('/api/admin/pricing', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => { const material = enumValue(req.body.materialType || req.body.material); const config = await PricingConfig.findOneAndUpdate({ material }, { material, basePricePerKg: Number(req.body.basePricePerKg), multipliers: req.body.multipliers }, { new: true, upsert: true, runValidators: true }); return res.json({ message: 'Pricing updated.', config }); });
 
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => res.status(400).json({ message: err?.message || 'Unexpected error.' }));
-connectDatabase().then(() => app.listen(port, () => console.log(`Server listening on http://localhost:${port}`))).catch(() => process.exit(1));
+// Connect to the database
+connectDatabase();
+
+// Export the app for Vercel
+export default app;
+
+// Only listen locally if not on Vercel
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
+}
