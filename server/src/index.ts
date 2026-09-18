@@ -23,8 +23,8 @@ import { getBasePrice, getQualityMultiplier, normalizeWeight, type MaterialType,
 const app = express();
 const port = Number(process.env.PORT || 5000);
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-const uploadDir = path.join(process.cwd(), 'uploads', 'yarn');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+//const uploadDir = path.join(process.cwd(), 'uploads', 'yarn');
+//if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 app.use(cors({ origin: clientUrl, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
