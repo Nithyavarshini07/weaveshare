@@ -5,7 +5,7 @@ import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
 import fs from 'fs';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { isValidObjectId } from 'mongoose';
 import { upload, publicUploadPath } from './lib/upload.js';
