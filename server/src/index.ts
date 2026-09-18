@@ -29,7 +29,7 @@ app.use(cors({ origin: clientUrl, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+//app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 const userView = (user: any) => ({ id: user._id.toString(), name: user.name, email: user.email, role: user.role, location: user.location, phone: user.phone, profileImage: user.profileImage });
 const tokenFor = (user: any) => jwt.sign({ userId: user._id.toString(), email: user.email, role: user.role }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '7d' });
