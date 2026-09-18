@@ -49,7 +49,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-[#bfeaf0] p-4 py-8">
       <div className="mx-auto max-w-2xl card-shell p-6 md:p-8">
         <div className="mb-6 flex justify-center">
-          <img src="/logo.svg" alt="WeaveShare logo" className="h-16 w-auto" />
+          <img src="/logo.jpeg" alt="WeaveShare logo" className="h-16 w-auto" />
         </div>
         <div className="mb-6 grid grid-cols-2 gap-3 text-sm font-semibold">
           <button type="button" onClick={() => setRole('SELLER')} className={`rounded-full px-4 py-3 ${role === 'SELLER' ? 'bg-brand-teal text-white' : 'bg-slate-100 text-slate-700'}`}>

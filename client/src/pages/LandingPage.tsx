@@ -18,7 +18,7 @@ export default function LandingPage() {
       <header className="mx-auto max-w-7xl px-4 py-6">
         <nav className="card-shell flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="WeaveShare logo" className="h-12 w-auto" />
+            <img src="/logo.jpeg" alt="WeaveShare logo" className="h-12 w-auto" />
           </div>
           <div className="hidden items-center gap-6 md:flex">
             <a href="#home" className="text-sm font-medium text-slate-700">Home</a>

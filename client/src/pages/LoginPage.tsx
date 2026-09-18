@@ -26,7 +26,7 @@ export default function LoginPage() {
       <div className="card-shell w-full max-w-sm overflow-hidden bg-[#c6ebf0] p-4 shadow-soft">
         <div className="rounded-[28px] bg-[#dfeef1] p-5">
           <div className="mb-5 flex justify-center">
-            <img src="/logo.svg" alt="WeaveShare logo" className="h-20 w-auto" />
+            <img src="/logo.jpeg" alt="WeaveShare logo" className="h-20 w-auto" />
           </div>
 
           <div className="mb-5 text-center text-sm font-semibold text-slate-700">I am a</div>

@@ -81,7 +81,7 @@ export default function SellerDashboard() {
       <div className="mx-auto max-w-7xl">
         <nav className="mb-6 flex items-center justify-between rounded-[28px] bg-white p-4 shadow-soft">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="WeaveShare" className="h-12 w-auto" />
+            <img src="/logo.jpeg" alt="WeaveShare" className="h-12 w-auto" />
           </div>
           <div className="flex items-center gap-4 text-sm font-medium">
             <span className="text-slate-700">Dashboard</span>
