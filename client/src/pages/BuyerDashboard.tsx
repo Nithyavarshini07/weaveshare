@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Search, SlidersHorizontal, ShoppingCart, X } from 'lucide-react';
 import api, { resolveImageUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import StarRating from '../components/StarRating';
 
 type MaterialType = 'COTTON' | 'SILK' | 'WOOL' | 'LINEN' | 'POLYESTER' | 'MIXED';
 type YarnCondition = 'NEW_LEFTOVER' | 'GOOD' | 'USED' | 'MIXED';
@@ -25,6 +26,8 @@ type Yarn = {
   location: string;
   imageUrls?: string[];
   sellerId?: Seller | string;
+  avgRating?: number;
+  reviewCount?: number;
 };
 
 type Filters = {
@@ -207,6 +210,7 @@ export default function BuyerDashboard() {
                   <div className="p-4">
                     <div className="mb-2 flex items-center justify-between gap-3"><span className="badge">{item.materialType}</span><span className="truncate text-sm font-bold text-slate-600">{item.color}</span></div>
                     <h3 className="truncate text-lg font-black text-brand-dark" title={item.name}>{item.name}</h3>
+                    {item.reviewCount ? <div className="mt-1 flex items-center gap-2"><StarRating value={item.avgRating || 0} readonly size="sm" /><span className="text-xs text-slate-500">{item.avgRating?.toFixed(1)} ({item.reviewCount})</span></div> : <p className="mt-1 text-xs text-slate-500">No reviews</p>}
                     <div className="mt-3 space-y-1 text-sm text-slate-600"><div>Weight: {item.weight} {item.weightUnit}</div><div>Price: ₹{item.finalPrice}</div><div>Location: {item.location}</div><div>Seller: {sellerName(item.sellerId)}</div></div>
                     <Link to={`/products/${itemId}`} className="primary-btn mt-4 w-full">VIEW DETAILS</Link>
                   </div>

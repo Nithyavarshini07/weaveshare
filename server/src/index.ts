@@ -15,6 +15,7 @@ import User from './models/User.js';
 import Yarn from './models/Yarn.js';
 import Cart from './models/Cart.js';
 import Order from './models/Order.js';
+import Review from './models/Review.js';
 import Category from './models/Category.js';
 import PricingConfig from './models/PricingConfig.js';
 import { authenticateToken, authorizeRoles, type AuthRequest } from './middleware/auth.js';
@@ -82,6 +83,21 @@ const enumValue = (value: unknown) =>
 // Build a public URL for each uploaded file
 const buildImageUrls = (files: Express.Multer.File[] = []) =>
   files.map((file) => `${PUBLIC_UPLOAD_PREFIX}/${file.filename}`);
+
+async function addReviewStats<T extends { _id: unknown }>(yarns: T[]) {
+  const stats = await Review.aggregate<{ _id: unknown; avg: number; count: number }>([
+    { $group: { _id: '$yarnId', avg: { $avg: '$rating' }, count: { $sum: 1 } } },
+  ]);
+  const statsByYarn = new Map(stats.map((stat) => [String(stat._id), stat]));
+  return yarns.map((yarn) => {
+    const stat = statsByYarn.get(String(yarn._id));
+    return {
+      ...(typeof (yarn as any).toObject === 'function' ? (yarn as any).toObject() : yarn),
+      avgRating: stat ? Number(stat.avg.toFixed(1)) : 0,
+      reviewCount: stat?.count || 0,
+    };
+  });
+}
 
 // ---------- HEALTH ----------
 app.get('/api/health', (_req, res) =>
@@ -249,12 +265,12 @@ app.get('/api/yarns', async (req, res) => {
       : { createdAt: -1 };
 
   const yarns = await Yarn.find(query).populate('sellerId', 'name email location').sort(sort as any);
-  return res.json(yarns);
+  return res.json(await addReviewStats(yarns));
 });
 
 // MY LISTINGS
 app.get('/api/yarns/my', authenticateToken, authorizeRoles('SELLER'), async (req: AuthRequest, res) =>
-  res.json(await Yarn.find({ sellerId: req.user!.userId }).sort({ createdAt: -1 }))
+  res.json(await addReviewStats(await Yarn.find({ sellerId: req.user!.userId }).sort({ createdAt: -1 })))
 );
 
 // SINGLE YARN
@@ -263,7 +279,70 @@ app.get('/api/yarns/:id', async (req, res) => {
     validId(req.params.id) &&
     (await Yarn.findById(req.params.id).populate('sellerId', 'name email location'));
   if (!yarn) return res.status(404).json({ message: 'Yarn not found.' });
-  return res.json(yarn);
+  return res.json((await addReviewStats([yarn]))[0]);
+});
+
+// ---------- REVIEWS ----------
+app.post('/api/reviews', authenticateToken, authorizeRoles('BUYER'), async (req: AuthRequest, res) => {
+  const yarnId = validId(String(req.body.yarnId || ''));
+  const rating = Number(req.body.rating);
+  const comment = typeof req.body.comment === 'string' ? req.body.comment.trim() : '';
+
+  if (!yarnId) return res.status(400).json({ message: 'A valid yarn is required.' });
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5)
+    return res.status(400).json({ message: 'Rating must be an integer from 1 to 5.' });
+  if (!comment || comment.length > 500)
+    return res.status(400).json({ message: 'Comment must be between 1 and 500 characters.' });
+
+  const deliveredOrder: any = await Order.findOne({
+    buyerId: req.user!.userId,
+    orderStatus: 'DELIVERED',
+    items: { $elemMatch: { yarnId } },
+  });
+  if (!deliveredOrder)
+    return res.status(403).json({ message: 'You can only review yarns you have received.' });
+
+  const existing = await Review.findOne({ yarnId, buyerId: req.user!.userId });
+  if (existing) return res.status(409).json({ message: 'You have already reviewed this yarn.' });
+
+  try {
+    const review = await Review.create({
+      yarnId,
+      buyerId: req.user!.userId,
+      orderId: deliveredOrder._id,
+      rating,
+      comment,
+    });
+    return res.status(201).json({ message: 'Review submitted successfully.', review });
+  } catch (error: any) {
+    if (error?.code === 11000)
+      return res.status(409).json({ message: 'You have already reviewed this yarn.' });
+    console.error('Create review error:', error);
+    return res.status(500).json({ message: 'Unable to submit review.' });
+  }
+});
+
+app.get('/api/reviews/me', authenticateToken, authorizeRoles('BUYER'), async (req: AuthRequest, res) =>
+  res.json(await Review.find({ buyerId: req.user!.userId }).sort({ createdAt: -1 }))
+);
+
+app.get('/api/reviews/can-review/:yarnId', authenticateToken, authorizeRoles('BUYER'), async (req: AuthRequest, res) => {
+  const yarnId = validId(req.params.yarnId);
+  if (!yarnId) return res.json({ canReview: false, reason: 'Yarn not found.' });
+  const existing = await Review.exists({ yarnId, buyerId: req.user!.userId });
+  if (existing) return res.json({ canReview: false, reason: 'You have already reviewed this yarn.' });
+  const delivered = await Order.exists({ buyerId: req.user!.userId, orderStatus: 'DELIVERED', items: { $elemMatch: { yarnId } } });
+  return res.json(delivered
+    ? { canReview: true }
+    : { canReview: false, reason: 'Buy and receive this yarn to review it.' });
+});
+
+app.get('/api/reviews/:yarnId', async (req, res) => {
+  const yarnId = validId(req.params.yarnId);
+  if (!yarnId) return res.status(400).json({ message: 'Invalid yarn id.' });
+  const reviews = await Review.find({ yarnId }).populate('buyerId', 'name').sort({ createdAt: -1 });
+  const stats = await Review.aggregate([{ $match: { yarnId } }, { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } }]);
+  return res.json({ reviews, avg: stats[0] ? Number(stats[0].avg.toFixed(1)) : 0, count: stats[0]?.count || 0 });
 });
 
 // UPDATE YARN

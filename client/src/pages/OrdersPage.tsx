@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package } from 'lucide-react';
 import api, { resolveImageUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import OrderTimeline from '../components/OrderTimeline';
+import { timeAgo } from '../lib/timeAgo';
+import StarRating from '../components/StarRating';
 
 type OrderItem = {
   yarnId: string;
@@ -24,10 +27,15 @@ type Order = {
   deliveryCharge: number;
   total: number;
   createdAt: string;
+  updatedAt?: string;
   paymentMethod: string;
   shippingName?: string;
   city?: string;
   state?: string;
+};
+
+type BuyerReview = {
+  yarnId: string;
 };
 
 const statusStyles: Record<string, string> = {
@@ -53,12 +61,20 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reviewedYarnIds, setReviewedYarnIds] = useState<Set<string>>(new Set());
+  const [reviewingYarnId, setReviewingYarnId] = useState<string | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [thankYouYarnIds, setThankYouYarnIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchOrders = async () => {
       try {
         const { data } = await api.get<Order[]>('/orders/my');
         setOrders(Array.isArray(data) ? data : []);
+        const reviews = await api.get<BuyerReview[]>('/reviews/me');
+        setReviewedYarnIds(new Set(reviews.data.map((review) => String(review.yarnId))));
       } catch {
         setError('Unable to load your orders. Please try again.');
       } finally {
@@ -68,6 +84,23 @@ export default function OrdersPage() {
 
     fetchOrders();
   }, []);
+
+  const submitReview = async (yarnId: string) => {
+    if (reviewRating < 1 || !reviewComment.trim()) return;
+    setReviewSubmitting(true);
+    try {
+      await api.post('/reviews', { yarnId, rating: reviewRating, comment: reviewComment.trim() });
+      setReviewedYarnIds((current) => new Set(current).add(yarnId));
+      setThankYouYarnIds((current) => new Set(current).add(yarnId));
+      setReviewingYarnId(null);
+      setReviewRating(0);
+      setReviewComment('');
+    } catch {
+      setError('Unable to submit this review. Please try again.');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -131,9 +164,16 @@ export default function OrdersPage() {
                     </span>
                   </div>
 
+                  <div className="border-b border-slate-100 py-4">
+                    <OrderTimeline status={order.orderStatus || order.status || 'PENDING'} />
+                    <p className="mt-2 text-right text-xs text-slate-500">Updated {timeAgo(order.updatedAt || order.createdAt)}</p>
+                  </div>
+
                   <div className="divide-y divide-slate-100">
-                    {order.items.map((item, index) => (
-                      <div key={`${item.yarnId}-${index}`} className="flex items-center gap-4 py-4">
+                    {order.items.map((item, index) => {
+                      const yarnId = String(item.yarnId);
+                      const delivered = status === 'DELIVERED';
+                      return <div key={`${item.yarnId}-${index}`} className="flex flex-wrap items-center gap-4 py-4">
                         <img
                           src={resolveImageUrl(item.image)}
                           data-fallback="false"
@@ -150,11 +190,10 @@ export default function OrdersPage() {
                           <h3 className="truncate font-bold text-brand-dark">{item.name}</h3>
                           <p className="text-sm text-slate-500">Qty: {item.quantity} · Weight: {item.weight ?? '-'} </p>
                         </div>
-                        <p className="shrink-0 text-right font-bold text-brand-dark">
-                          ₹{item.price} × {item.quantity} = ₹{item.price * item.quantity}
-                        </p>
-                      </div>
-                    ))}
+                        <div className="ml-auto flex shrink-0 flex-col items-end gap-2"><p className="text-right font-bold text-brand-dark">₹{item.price} × {item.quantity} = ₹{item.price * item.quantity}</p>{delivered && (thankYouYarnIds.has(yarnId) ? <span className="text-xs font-semibold text-emerald-700">Thank you for reviewing</span> : reviewedYarnIds.has(yarnId) ? <span className="text-xs font-semibold text-emerald-700">Reviewed ✓</span> : <button onClick={() => setReviewingYarnId(yarnId)} className="text-xs font-semibold text-brand-teal hover:underline">Write a review</button>)}</div>
+                        {reviewingYarnId === yarnId && <div className="basis-full rounded-2xl bg-slate-50 p-4"><StarRating value={reviewRating} onChange={setReviewRating} /><textarea maxLength={500} value={reviewComment} onChange={(event) => setReviewComment(event.target.value)} placeholder="Share your experience" className="soft-input mt-3 min-h-[90px] rounded-[20px]" /><div className="mt-1 text-right text-xs text-slate-500">{reviewComment.length}/500</div><div className="mt-3 flex gap-2"><button onClick={() => setReviewingYarnId(null)} className="secondary-btn">Cancel</button><button onClick={() => void submitReview(yarnId)} disabled={reviewSubmitting || reviewRating < 1 || !reviewComment.trim()} className="primary-btn">{reviewSubmitting ? 'Submitting...' : 'Submit review'}</button></div></div>}
+                      </div>;
+                    })}
                   </div>
 
                   <div className="flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-end sm:justify-between">

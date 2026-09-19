@@ -1,350 +1,95 @@
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { toast } from 'sonner';
 import api, { resolveImageUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import StarRating from '../components/StarRating';
+import OrderTimeline from '../components/OrderTimeline';
+
+type Tab = 'overview' | 'listings' | 'orders';
+type Listing = { _id?: string; id?: string; name: string; materialType: string; color: string; weight: number; weightUnit: string; condition: string; description: string; location: string; finalPrice: number; imageUrls?: string[]; status: string; avgRating?: number; reviewCount?: number };
+type OrderItem = { yarnId: string; name: string; image?: string; quantity: number; price: number };
+type SellerOrder = { _id?: string; id?: string; orderNumber: string; orderStatus?: string; status?: string; createdAt: string; items: OrderItem[]; total: number; shippingName?: string; city?: string; state?: string; pincode?: string };
+type ListingForm = { name: string; materialType: string; color: string; weight: string; weightUnit: string; condition: string; description: string; location: string; finalPrice: string };
+type ChartPoint = { date: string; revenue: number; orders: number };
+type TopListing = { id: string; name: string; image?: string; units: number; revenue: number; avgRating: number; reviewCount: number };
+
+const blankForm: ListingForm = { name: '', materialType: 'COTTON', color: '', weight: '', weightUnit: 'kg', condition: 'GOOD', description: '', location: '', finalPrice: '' };
+const nextStatus: Record<string, string> = { PENDING: 'CONFIRMED', CONFIRMED: 'PACKED', PACKED: 'SHIPPED', SHIPPED: 'DELIVERED' };
+const statusStyle: Record<string, string> = { PENDING: 'bg-amber-100 text-amber-800', CONFIRMED: 'bg-blue-100 text-blue-800', PACKED: 'bg-purple-100 text-purple-800', SHIPPED: 'bg-cyan-100 text-cyan-800', DELIVERED: 'bg-emerald-100 text-emerald-800', CANCELLED: 'bg-red-100 text-red-800' };
+
+function idOf(value: { _id?: string; id?: string }) { return value._id || value.id || ''; }
+function statusOf(order: SellerOrder) { return (order.orderStatus || order.status || 'PENDING').toUpperCase(); }
+function apiError(error: unknown) { if (typeof error === 'object' && error !== null && 'response' in error) return String((error as { response?: { data?: { message?: string } } }).response?.data?.message || 'Request failed'); return 'Request failed'; }
+function fallback(event: React.SyntheticEvent<HTMLImageElement>) { if (event.currentTarget.dataset.fallback !== 'true') { event.currentTarget.dataset.fallback = 'true'; event.currentTarget.src = '/blue.jpg'; } }
 
 export default function SellerDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [listings, setListings] = useState<any[]>([]);
-  const [stats, setStats] = useState({
-    totalListings: 0,
-    availableYarn: 0,
-    ordersReceived: 0,
-    totalEarnings: 0,
-  });
-  const [form, setForm] = useState({
-    name: '',
-    materialType: 'COTTON',
-    color: '',
-    weight: '',
-    weightUnit: 'kg',
-    condition: 'GOOD',
-    description: '',
-    location: '',
-    price: '',
-  });
+  const [params, setParams] = useSearchParams();
+  const activeTab = (params.get('tab') as Tab) || 'overview';
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [orders, setOrders] = useState<SellerOrder[]>([]);
+  const [form, setForm] = useState<ListingForm>(blankForm);
   const [images, setImages] = useState<File[]>([]);
-  const [preview, setPreview] = useState<string[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [editing, setEditing] = useState<Listing | null>(null);
+  const [editForm, setEditForm] = useState<ListingForm>(blankForm);
+  const [editImages, setEditImages] = useState<File[]>([]);
+  const [removedImages, setRemovedImages] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [busyOrders, setBusyOrders] = useState<Set<string>>(new Set());
+  const [deletingId, setDeletingId] = useState('');
 
-  const fetchSellerData = async () => {
-    const [{ data: myListings }, { data: orders }] = await Promise.all([
-      api.get('/yarns/my'),
-      api.get('/orders/my'),
-    ]);
-    const deliveredOrders = orders.filter(
-      (order: any) => (order.orderStatus || order.status) === 'DELIVERED'
-    );
-    setListings(myListings);
-    setStats({
-      totalListings: myListings.length,
-      availableYarn: myListings.filter((y: any) => y.status === 'AVAILABLE').length,
-      ordersReceived: orders.length,
-      totalEarnings: deliveredOrders.reduce(
-        (sum: number, order: any) =>
-          sum +
-          order.items.reduce(
-            (itemSum: number, item: any) =>
-              itemSum + Number(item.price || 0) * Number(item.quantity || 0),
-            0
-          ),
-        0
-      ),
-    });
-  };
+  const fetchData = useCallback(async () => {
+    const [listingResponse, orderResponse] = await Promise.all([api.get<Listing[]>('/yarns/my'), api.get<SellerOrder[]>('/orders/my')]);
+    setListings(listingResponse.data);
+    setOrders(orderResponse.data);
+  }, []);
 
-  useEffect(() => {
-    fetchSellerData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  useEffect(() => { if (user?.role === 'SELLER') void fetchData(); }, [fetchData, user]);
 
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    setImages(files);
-    setPreview(files.map((file) => URL.createObjectURL(file)));
-  };
+  const delivered = useMemo(() => orders.filter((order) => statusOf(order) === 'DELIVERED'), [orders]);
+  const stats = useMemo(() => ({ listings: listings.length, available: listings.filter((listing) => listing.status === 'AVAILABLE').length, orders: orders.length, earnings: delivered.reduce((sum, order) => sum + order.total, 0) }), [delivered, listings, orders]);
+  const chartData = useMemo<ChartPoint[]>(() => {
+    const points = new Map<string, ChartPoint>();
+    for (let offset = 29; offset >= 0; offset -= 1) { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - offset); points.set(date.toISOString().slice(0, 10), { date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), revenue: 0, orders: 0 }); }
+    delivered.forEach((order) => { const point = points.get(new Date(order.createdAt).toISOString().slice(0, 10)); if (point) { point.revenue += order.total; point.orders += 1; } });
+    return [...points.values()];
+  }, [delivered]);
+  const topListings = useMemo<TopListing[]>(() => { const map = new Map<string, TopListing>(); delivered.forEach((order) => order.items.forEach((item) => { const id = String(item.yarnId); const listing = listings.find((candidate) => idOf(candidate) === id); const current = map.get(id) || { id, name: item.name, image: listing?.imageUrls?.[0], units: 0, revenue: 0, avgRating: listing?.avgRating || 0, reviewCount: listing?.reviewCount || 0 }; current.units += item.quantity; current.revenue += item.price * item.quantity; map.set(id, current); })); return [...map.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5); }, [delivered, listings]);
+  const revenue = chartData.reduce((sum, point) => sum + point.revenue, 0);
+  const orderCount = chartData.reduce((sum, point) => sum + point.orders, 0);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const payload = new FormData();
-      payload.append('name', form.name);
-      payload.append('materialType', form.materialType);
-      payload.append('color', form.color);
-      payload.append('weight', form.weight);
-      payload.append('weightUnit', form.weightUnit);
-      payload.append('condition', form.condition);
-      payload.append('description', form.description);
-      payload.append('location', form.location);
-      // ✅ FIX: backend expects `finalPrice`, not `price`
-      payload.append('finalPrice', form.price);
-      // ✅ FIX: field name must match upload.array('images', 5) on the server
-      images.forEach((image) => payload.append('images', image));
+  const setTab = (tab: Tab) => setParams({ tab });
+  const logoutSeller = async () => { await logout(); navigate('/login'); };
+  const createListing = async (event: FormEvent) => { event.preventDefault(); if (submitting) return; setSubmitting(true); try { const payload = new FormData(); Object.entries(form).forEach(([key, value]) => payload.append(key, value)); images.forEach((image) => payload.append('images', image)); await api.post('/yarns', payload); toast.success('Listing created'); setForm(blankForm); setImages([]); setPreviews([]); await fetchData(); } catch (error: unknown) { toast.error(apiError(error)); } finally { setSubmitting(false); } };
+  const openEdit = (listing: Listing) => { setEditing(listing); setEditForm({ name: listing.name, materialType: listing.materialType, color: listing.color, weight: String(listing.weight), weightUnit: listing.weightUnit, condition: listing.condition, description: listing.description, location: listing.location, finalPrice: String(listing.finalPrice) }); setRemovedImages([]); setEditImages([]); };
+  const saveEdit = async (event: FormEvent) => { event.preventDefault(); if (!editing || submitting) return; const id = idOf(editing); setSubmitting(true); try { await api.put(`/yarns/${id}`, { ...editForm, weight: Number(editForm.weight), finalPrice: Number(editForm.finalPrice), imageUrls: (editing.imageUrls || []).filter((image) => !removedImages.includes(image)) }); if (editImages.length) { const payload = new FormData(); editImages.forEach((image) => payload.append('images', image)); await api.post(`/yarns/${id}/images`, payload); } toast.success('Listing updated'); setEditing(null); await fetchData(); } catch (error: unknown) { toast.error(apiError(error)); } finally { setSubmitting(false); } };
+  const deleteListing = async (id: string) => { if (!window.confirm('Are you sure you want to delete this listing?')) return; setDeletingId(id); try { await api.delete(`/yarns/${id}`); toast.success('Listing deleted'); await fetchData(); } catch (error: unknown) { toast.error(apiError(error)); } finally { setDeletingId(''); } };
+  const updateOrder = async (order: SellerOrder, status: string) => { const id = idOf(order); const snapshot = orders; setBusyOrders((current) => new Set(current).add(id)); setOrders((current) => current.map((candidate) => idOf(candidate) === id ? { ...candidate, orderStatus: status } : candidate)); try { await api.put(`/orders/${id}/status`, { status }); toast.success(`Order marked as ${status}`); await fetchData(); } catch (error: unknown) { setOrders(snapshot); toast.error(apiError(error)); } finally { setBusyOrders((current) => { const next = new Set(current); next.delete(id); return next; }); } };
 
-      // Let the browser set the multipart boundary automatically —
-      // manually setting 'Content-Type' can break multer parsing in some cases.
-      const { data } = await api.post('/yarns', payload);
-
-      toast.success(data.message || 'Listing created');
-      setForm({
-        name: '',
-        materialType: 'COTTON',
-        color: '',
-        weight: '',
-        weightUnit: 'kg',
-        condition: 'GOOD',
-        description: '',
-        location: '',
-        price: '',
-      });
-      setImages([]);
-      setPreview([]);
-      await fetchSellerData();
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Unable to create listing');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (id: string | number) => {
-    if (deletingId) return;
-    const confirmed = window.confirm('Are you sure you want to delete this listing?');
-    if (!confirmed) return;
-
-    setDeletingId(String(id));
-    // Optimistic removal
-    const snapshot = listings;
-    setListings((prev) => prev.filter((item) => String(item.id || item._id) !== String(id)));
-
-    try {
-      const { data } = await api.delete(`/yarns/${id}`);
-      toast.success(data?.message || 'Listing deleted successfully');
-      await fetchSellerData();
-    } catch (error: any) {
-      // Rollback on failure
-      setListings(snapshot);
-      toast.error(error?.response?.data?.message || 'Unable to delete listing');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
+  const renderFields = (values: ListingForm, update: (value: ListingForm) => void) => <>
+    <input className="soft-input" placeholder="Yarn Name" value={values.name} onChange={(event) => update({ ...values, name: event.target.value })} required />
+    <div className="grid gap-3 md:grid-cols-2"><select className="soft-input" value={values.materialType} onChange={(event) => update({ ...values, materialType: event.target.value })}>{['COTTON', 'SILK', 'WOOL', 'LINEN', 'POLYESTER', 'MIXED', 'OTHER'].map((type) => <option key={type}>{type}</option>)}</select><input className="soft-input" placeholder="Color" value={values.color} onChange={(event) => update({ ...values, color: event.target.value })} required /></div>
+    <div className="grid gap-3 md:grid-cols-2"><input className="soft-input" type="number" step="0.1" placeholder="Weight" value={values.weight} onChange={(event) => update({ ...values, weight: event.target.value })} required /><select className="soft-input" value={values.weightUnit} onChange={(event) => update({ ...values, weightUnit: event.target.value })}><option>kg</option><option>g</option></select></div>
+    <div className="grid gap-3 md:grid-cols-2"><select className="soft-input" value={values.condition} onChange={(event) => update({ ...values, condition: event.target.value })}>{['NEW_LEFTOVER', 'GOOD', 'USED', 'MIXED'].map((condition) => <option key={condition}>{condition}</option>)}</select><input className="soft-input" placeholder="Location" value={values.location} onChange={(event) => update({ ...values, location: event.target.value })} required /></div>
+    <textarea className="soft-input min-h-[100px] rounded-[20px]" placeholder="Description" value={values.description} onChange={(event) => update({ ...values, description: event.target.value })} required />
+    <input className="soft-input" type="number" step="0.01" placeholder="Final price" value={values.finalPrice} onChange={(event) => update({ ...values, finalPrice: event.target.value })} required />
+  </>;
 
   return (
-    <div className="min-h-screen bg-[#dfeef0] p-4 md:p-6">
-      <div className="mx-auto max-w-7xl">
-        <nav className="mb-6 flex items-center justify-between rounded-[28px] bg-white p-4 shadow-soft">
-          <div className="flex items-center gap-3">
-            <img src="/logo.jpeg" alt="WeaveShare" className="h-12 w-auto" />
-          </div>
-          <div className="flex items-center gap-4 text-sm font-medium">
-            <span className="text-slate-700">Dashboard</span>
-            <span className="text-slate-700">My Listings</span>
-            <button onClick={handleLogout} className="secondary-btn px-3 py-2 text-sm">
-              Logout
-            </button>
-          </div>
-        </nav>
-
-        <div className="grid gap-4 md:grid-cols-4">
-          {[
-            { label: 'Total Listings', value: stats.totalListings },
-            { label: 'Available Yarn', value: stats.availableYarn },
-            { label: 'Orders Received', value: stats.ordersReceived },
-            { label: 'Total Earnings', value: `₹${stats.totalEarnings}` },
-          ].map((card) => (
-            <div key={card.label} className="card-shell p-5">
-              <div className="text-sm text-slate-500">{card.label}</div>
-              <div className="mt-3 text-3xl font-black text-brand-dark">{card.value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="card-shell p-5">
-            <h3 className="mb-4 text-2xl font-black text-brand-dark">My Listings</h3>
-            <div className="space-y-3">
-              {listings.length ? (
-                listings.map((item) => {
-                  const id = item.id || item._id;
-                  const firstImage = resolveImageUrl(item.imageUrls?.[0]);
-                  return (
-                    <div
-                      key={id}
-                      className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        {/* ✅ NEW: thumbnail so seller can SEE the uploaded image */}
-                        <img
-                          src={firstImage}
-                          alt={item.name}
-                          className="h-14 w-14 flex-none rounded-xl object-cover bg-slate-200"
-                          onError={(e) => {
-                            const img = e.currentTarget;
-                            if (!img.dataset.fallback) {
-                              img.dataset.fallback = '1';
-                              img.src = '/blue.jpg';
-                            }
-                          }}
-                        />
-                        <div className="min-w-0">
-                          <div className="font-bold text-slate-800 truncate">{item.name}</div>
-                          <div className="text-sm text-slate-500 truncate">
-                            {item.materialType} • {item.color} • {item.weight} {item.weightUnit}
-                          </div>
-                          {item.imageUrls?.length ? (
-                            <div className="text-xs text-emerald-600">
-                              {item.imageUrls.length} image{item.imageUrls.length > 1 ? 's' : ''}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-red-500">No image saved</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 text-right">
-                        <div>
-                          <div className="font-bold text-brand-teal">₹{item.finalPrice}</div>
-                          <div className="text-xs text-slate-500">{item.status}</div>
-                        </div>
-                        <button
-                          onClick={() => handleDelete(id)}
-                          disabled={deletingId === String(id)}
-                          className="rounded-full bg-red-100 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-200 disabled:opacity-50"
-                          title="Delete listing"
-                        >
-                          {deletingId === String(id) ? 'Deleting…' : 'Delete'}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-slate-500">No listings yet.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="card-shell p-5">
-            <h3 className="mb-4 text-2xl font-black text-brand-dark">LIST YOUR YARN</h3>
-            <form onSubmit={handleSubmit} className="space-y-3">
-              <input
-                className="soft-input"
-                placeholder="Yarn Name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-              />
-              <div className="grid gap-3 md:grid-cols-2">
-                <select
-                  className="soft-input"
-                  value={form.materialType}
-                  onChange={(e) => setForm({ ...form, materialType: e.target.value })}
-                >
-                  {['COTTON', 'SILK', 'WOOL', 'LINEN', 'POLYESTER', 'MIXED', 'OTHER'].map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="soft-input"
-                  placeholder="Color"
-                  value={form.color}
-                  onChange={(e) => setForm({ ...form, color: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <input
-                  className="soft-input"
-                  type="number"
-                  step="0.1"
-                  placeholder="Weight"
-                  value={form.weight}
-                  onChange={(e) => setForm({ ...form, weight: e.target.value })}
-                  required
-                />
-                <select
-                  className="soft-input"
-                  value={form.weightUnit}
-                  onChange={(e) => setForm({ ...form, weightUnit: e.target.value })}
-                >
-                  <option value="kg">kg</option>
-                  <option value="g">g</option>
-                </select>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <select
-                  className="soft-input"
-                  value={form.condition}
-                  onChange={(e) => setForm({ ...form, condition: e.target.value })}
-                >
-                  {['NEW_LEFTOVER', 'GOOD', 'USED', 'MIXED'].map((condition) => (
-                    <option key={condition} value={condition}>
-                      {condition}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="soft-input"
-                  placeholder="Location"
-                  value={form.location}
-                  onChange={(e) => setForm({ ...form, location: e.target.value })}
-                  required
-                />
-              </div>
-              <textarea
-                className="soft-input min-h-[100px] rounded-[20px]"
-                placeholder="Description"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                required
-              />
-              <input
-                className="soft-input"
-                type="number"
-                step="0.01"
-                placeholder="Price"
-                value={form.price}
-                onChange={(e) => setForm({ ...form, price: e.target.value })}
-                required
-              />
-              <input
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleImageChange}
-                className="block w-full rounded-full border border-dashed border-slate-300 bg-slate-50 p-3 text-sm"
-              />
-              {preview.length > 0 && (
-                <div className="grid grid-cols-3 gap-2">
-                  {preview.map((image, index) => (
-                    <img
-                      key={image + index}
-                      src={image}
-                      alt="Preview"
-                      className="h-20 w-full rounded-xl object-cover"
-                    />
-                  ))}
-                </div>
-              )}
-              <button type="submit" className="primary-btn w-full" disabled={submitting}>
-                {submitting ? 'Creating…' : 'Create Listing'}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div className="min-h-screen bg-[#dfeef0] p-4 md:p-6"><div className="mx-auto max-w-7xl">
+      <nav className="mb-6 flex items-center justify-between rounded-[28px] bg-white p-4 shadow-soft"><img src="/logo.jpeg" alt="WeaveShare" className="h-12 w-auto" /><button onClick={() => void logoutSeller()} className="secondary-btn px-3 py-2 text-sm">Logout</button></nav>
+      <div className="mb-6 flex flex-wrap gap-2">{(['overview', 'listings', 'orders'] as Tab[]).map((tab) => <button key={tab} onClick={() => setTab(tab)} className={`rounded-full px-5 py-3 text-sm font-bold capitalize ${activeTab === tab ? 'bg-brand-teal text-white' : 'bg-white text-slate-700'}`}>{tab === 'orders' ? 'Incoming Orders' : tab}</button>)}</div>
+      {activeTab === 'overview' && <><div className="grid gap-4 md:grid-cols-4">{[['Total Listings', stats.listings], ['Available Yarn', stats.available], ['Orders Received', stats.orders], ['Total Earnings', `₹${stats.earnings}`]].map(([label, value]) => <div key={String(label)} className="card-shell p-5"><div className="text-sm text-slate-500">{label}</div><div className="mt-3 text-3xl font-black text-brand-dark">{value}</div></div>)}</div><div className="mt-6 grid gap-6 lg:grid-cols-2"><section className="card-shell p-5"><h2 className="text-2xl font-black text-brand-dark">Revenue, last 30 days</h2><p className="mb-4 text-sm text-slate-500">Total ₹{revenue} · {orderCount} orders · Avg ₹{orderCount ? (revenue / orderCount).toFixed(0) : '0'}</p>{orderCount ? <ResponsiveContainer width="100%" height={280}><LineChart data={chartData}><XAxis dataKey="date" tick={{ fontSize: 11 }} /><YAxis /><Tooltip formatter={(value: unknown) => `₹${value ?? 0}`} /><Line type="monotone" dataKey="revenue" stroke="#2e8ca6" strokeWidth={3} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-[280px] items-center justify-center text-slate-500">No delivered orders in the last 30 days.</div>}</section><section className="card-shell overflow-hidden p-5"><h2 className="mb-4 text-2xl font-black text-brand-dark">Top listings by revenue</h2>{topListings.length ? <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-slate-500"><tr><th className="pb-3">Listing Name</th><th className="pb-3">Units Sold</th><th className="pb-3">Revenue</th><th className="pb-3">Avg Rating</th></tr></thead><tbody>{topListings.map((item) => <tr key={item.id} className="border-t border-slate-100"><td className="py-3"><div className="flex items-center gap-2"><img src={resolveImageUrl(item.image)} onError={fallback} alt="" className="h-10 w-10 rounded-lg object-cover" />{item.name}</div></td><td>{item.units}</td><td>₹{item.revenue}</td><td>{item.reviewCount ? `${item.avgRating.toFixed(1)} (${item.reviewCount})` : 'No reviews'}</td></tr>)}</tbody></table></div> : <p className="py-12 text-center text-slate-500">No sales yet. Once you get orders, your top listings will show here.</p>}</section></div></>}
+      {activeTab === 'listings' && <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]"><section className="card-shell p-5"><h2 className="mb-4 text-2xl font-black text-brand-dark">My Listings</h2><div className="space-y-3">{listings.map((listing) => { const id = idOf(listing); return <div key={id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3"><div className="flex min-w-0 items-center gap-3"><img src={resolveImageUrl(listing.imageUrls?.[0])} onError={fallback} alt={listing.name} className="h-14 w-14 rounded-xl object-cover" /><div className="min-w-0"><div className="truncate font-bold text-slate-800">{listing.name}</div>{listing.reviewCount ? <div className="flex items-center gap-2"><StarRating value={listing.avgRating || 0} readonly size="sm" /><span className="text-xs text-slate-500">{listing.avgRating?.toFixed(1)} ({listing.reviewCount})</span></div> : <div className="text-xs text-slate-500">No reviews yet</div>}<div className="text-sm text-slate-500">{listing.materialType} · {listing.weight} {listing.weightUnit}</div></div></div><div className="flex items-center gap-2"><span className="font-bold text-brand-teal">₹{listing.finalPrice}</span><button onClick={() => openEdit(listing)} className="secondary-btn px-3 py-2 text-xs">Edit</button><button onClick={() => void deleteListing(id)} disabled={deletingId === id} className="rounded-full bg-red-100 px-3 py-2 text-xs text-red-600">Delete</button></div></div>; })}</div></section><section className="card-shell p-5"><h2 className="mb-4 text-2xl font-black text-brand-dark">LIST YOUR YARN</h2><form onSubmit={(event) => void createListing(event)} className="space-y-3">{renderFields(form, setForm)}<input type="file" multiple accept="image/*" onChange={(event) => { const files = Array.from(event.target.files || []); setImages(files); setPreviews(files.map((file) => URL.createObjectURL(file))); }} className="block w-full rounded-full border border-dashed border-slate-300 bg-slate-50 p-3 text-sm" />{previews.length > 0 && <div className="grid grid-cols-3 gap-2">{previews.map((image) => <img key={image} src={image} alt="Preview" className="h-20 w-full rounded-xl object-cover" />)}</div>}<button type="submit" disabled={submitting} className="primary-btn w-full">{submitting ? 'Creating...' : 'Create Listing'}</button></form></section></div>}
+      {activeTab === 'orders' && <div className="space-y-6">{(['Active', 'Completed', 'Cancelled'] as const).map((group) => { const groupOrders = orders.filter((order) => group === 'Active' ? ['PENDING', 'CONFIRMED', 'PACKED', 'SHIPPED'].includes(statusOf(order)) : statusOf(order) === group.toUpperCase()); return <section key={group}><h2 className="mb-3 text-2xl font-black text-brand-dark">{group}</h2><div className="grid gap-5 lg:grid-cols-2">{groupOrders.map((order) => { const status = statusOf(order); const id = idOf(order); const busy = busyOrders.has(id); return <article key={id} className="card-shell p-5"><div className="flex items-start justify-between"><div><h3 className="font-mono font-bold text-brand-dark">{order.orderNumber}</h3><p className="text-sm text-slate-500">{new Date(order.createdAt).toLocaleDateString()} · {order.shippingName || 'Buyer'}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${statusStyle[status]}`}>{status}</span></div><OrderTimeline status={status} compact />{order.items.map((item) => <div key={item.yarnId} className="flex items-center gap-3 border-t border-slate-100 py-3"><img src={resolveImageUrl(item.image)} onError={fallback} alt={item.name} className="h-12 w-12 rounded-lg object-cover" /><div className="text-sm"><div className="font-semibold text-brand-dark">{item.name}</div><div className="text-slate-500">Qty {item.quantity} · ₹{item.price}</div></div></div>)}<p className="mt-3 text-sm text-slate-600">Ship to: {order.city || '-'}, {order.state || '-'} {order.pincode || ''}</p><div className="mt-4 flex items-center justify-between"><strong className="text-xl text-brand-dark">₹{order.total}</strong><div className="flex gap-2">{nextStatus[status] && <button disabled={busy} onClick={() => void updateOrder(order, nextStatus[status])} className="primary-btn px-3 py-2 text-xs">{busy ? 'Saving...' : `Next: ${nextStatus[status]}`}</button>}{['PENDING', 'CONFIRMED'].includes(status) && <button disabled={busy} onClick={() => void updateOrder(order, 'CANCELLED')} className="secondary-btn px-3 py-2 text-xs">Cancel order</button>}</div></div></article>; })}</div>{!groupOrders.length && <div className="card-shell p-6 text-slate-500">No {group.toLowerCase()} orders.</div>}</section>; })}</div>}
+      {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"><form onSubmit={(event) => void saveEdit(event)} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] bg-white p-6"><div className="mb-5 flex justify-between"><h2 className="text-2xl font-black text-brand-dark">Edit listing</h2><button type="button" onClick={() => setEditing(null)} className="secondary-btn">Close</button></div><div className="space-y-3">{renderFields(editForm, setEditForm)}<p className="text-sm font-semibold text-slate-700">Current images</p><div className="flex flex-wrap gap-2">{(editing.imageUrls || []).filter((image) => !removedImages.includes(image)).map((image) => <div key={image} className="relative"><img src={resolveImageUrl(image)} onError={fallback} alt="Current listing" className="h-20 w-20 rounded-xl object-cover" /><button type="button" onClick={() => setRemovedImages((current) => [...current, image])} className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-1 text-xs text-white">X</button></div>)}</div><input type="file" multiple accept="image/*" onChange={(event) => setEditImages(Array.from(event.target.files || []))} className="block w-full rounded-full border border-dashed border-slate-300 bg-slate-50 p-3 text-sm" /><div className="flex gap-3"><button type="button" onClick={() => setEditing(null)} className="secondary-btn flex-1">Cancel</button><button type="submit" disabled={submitting} className="primary-btn flex-1">{submitting ? 'Saving...' : 'Save changes'}</button></div></div></form></div>}
+    </div></div>
   );
 }
+
+
+
