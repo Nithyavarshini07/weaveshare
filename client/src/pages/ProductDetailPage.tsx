@@ -1,21 +1,61 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import axios from 'axios';
+import { ArrowLeft, ShoppingCart } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import api from '../lib/api';
+import api, { resolveImageUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+
+type Seller = { name?: string; email?: string; location?: string };
+type Yarn = {
+  _id?: string;
+  id?: string;
+  name: string;
+  materialType: string;
+  color: string;
+  weight: number;
+  weightUnit: string;
+  condition: string;
+  description: string;
+  location: string;
+  finalPrice: number;
+  basePricePerKg: number;
+  imageUrls?: string[];
+  sellerId?: Seller | string;
+};
+
+function sellerDetails(sellerId?: Seller | string) {
+  return typeof sellerId === 'object' ? sellerId : undefined;
+}
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [item, setItem] = useState<any>(null);
+  const [item, setItem] = useState<Yarn | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchItem = async () => {
-      const { data } = await api.get(`/yarns/${id}`);
-      setItem(data);
+      if (!id) return;
+      try {
+        const { data } = await api.get<Yarn>(`/yarns/${id}`);
+        setItem(data);
+        setSelectedImage(data.imageUrls?.[0]);
+      } catch (requestError: unknown) {
+        if (axios.isAxiosError(requestError) && requestError.response?.status === 404) {
+          setNotFound(true);
+        } else {
+          setError('Unable to load this yarn listing.');
+        }
+      } finally {
+        setLoading(false);
+      }
     };
-    if (id) fetchItem();
+    void fetchItem();
   }, [id]);
 
   const handleAddToCart = async () => {
@@ -24,42 +64,49 @@ export default function ProductDetailPage() {
       navigate('/login');
       return;
     }
-
+    const yarnId = item?._id || item?.id;
+    if (!yarnId) return;
     try {
-      await api.post('/cart', { yarnId: item.id, quantity: 1 });
+      await api.post('/cart', { yarnId, quantity: 1 });
       toast.success('Item added to cart');
       navigate('/cart');
-    } catch (error: any) {
-      toast.error(error?.response?.data?.message || 'Could not add to cart');
+    } catch (requestError: unknown) {
+      const message = axios.isAxiosError(requestError) ? requestError.response?.data?.message : undefined;
+      toast.error(message || 'Could not add to cart');
     }
   };
 
-  if (!item) return <div className="flex min-h-screen items-center justify-center">Loading product...</div>;
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-[#dfeef0]">Loading product...</div>;
+  if (notFound) return <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#dfeef0] p-6"><h1 className="text-3xl font-black text-brand-dark">Yarn not found</h1><Link to="/buyer" className="primary-btn">Back to listings</Link></div>;
+  if (error || !item) return <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#dfeef0] p-6"><p className="text-red-600">{error || 'Unable to load this listing.'}</p><Link to="/buyer" className="primary-btn">Back to listings</Link></div>;
+
+  const images = item.imageUrls?.length ? item.imageUrls : [undefined];
+  const seller = sellerDetails(item.sellerId);
+  const imageError = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    if (event.currentTarget.dataset.fallback !== 'true') {
+      event.currentTarget.dataset.fallback = 'true';
+      event.currentTarget.src = '/blue.jpg';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#dfeef0] p-4 md:p-6">
-      <div className="mx-auto max-w-6xl card-shell p-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div>
-            <img src={item.imageUrls?.[0] || '/placeholder.jpg'} alt={item.name} className="h-[420px] w-full rounded-[28px] object-cover" />
-          </div>
-
-          <div>
-            <span className="badge">{item.materialType}</span>
-            <h1 className="mt-4 text-4xl font-black text-brand-dark">{item.name}</h1>
-            <div className="mt-6 space-y-2 text-slate-600">
-              <div>Color: {item.color}</div>
-              <div>Weight: {item.weight} {item.weightUnit}</div>
-              <div>Condition: {item.condition}</div>
-              <div>Seller: {item.seller?.name}</div>
-              <div>Location: {item.location}</div>
-              <div>Price: ₹{item.finalPrice}</div>
-              <div>Price per kg: ₹{item.basePricePerKg}</div>
+      <div className="mx-auto max-w-6xl">
+        <Link to="/buyer" className="secondary-btn mb-5 gap-2"><ArrowLeft size={16} /> Back to listings</Link>
+        <div className="card-shell p-6">
+          <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+            <div>
+              <img src={resolveImageUrl(selectedImage)} data-fallback="false" onError={imageError} alt={item.name} className="h-[420px] w-full rounded-[28px] object-cover" />
+              <div className="mt-4 flex gap-3 overflow-x-auto">
+                {images.map((image, index) => <button key={`${image || 'fallback'}-${index}`} onClick={() => setSelectedImage(image)} className={`shrink-0 rounded-2xl p-1 ${selectedImage === image ? 'ring-2 ring-brand-teal' : ''}`}><img src={resolveImageUrl(image)} data-fallback="false" onError={imageError} alt={`${item.name} thumbnail ${index + 1}`} className="h-20 w-20 rounded-xl object-cover" /></button>)}
+              </div>
             </div>
-            <p className="mt-5 text-slate-600">{item.description}</p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button onClick={handleAddToCart} className="primary-btn">ADD TO CART</button>
-              <button onClick={() => navigate('/checkout')} className="secondary-btn">BUY NOW</button>
+            <div>
+              <span className="badge">{item.materialType}</span>
+              <h1 className="mt-4 text-4xl font-black text-brand-dark">{item.name}</h1>
+              <div className="mt-6 space-y-2 text-slate-600"><div>Color: {item.color}</div><div>Weight: {item.weight} {item.weightUnit}</div><div>Condition: {item.condition}</div><div>Seller: {seller?.name || 'Unknown seller'}</div><div>Location: {item.location}</div><div>Price: ₹{item.finalPrice}</div><div>Price per kg: ₹{item.basePricePerKg}</div></div>
+              <p className="mt-5 text-slate-600">{item.description}</p>
+              <div className="mt-6 flex flex-wrap gap-3"><button onClick={handleAddToCart} className="primary-btn gap-2"><ShoppingCart size={16} /> ADD TO CART</button><button onClick={() => navigate('/checkout')} className="secondary-btn">BUY NOW</button></div>
             </div>
           </div>
         </div>

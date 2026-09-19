@@ -9,6 +9,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import ProductDetailPage from './pages/ProductDetailPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
+import OrdersPage from './pages/OrdersPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 function ProtectedRoute({ children, allowedRoles = [] }: { children: React.ReactNode; allowedRoles?: string[] }) {
@@ -38,8 +39,9 @@ function AppRoutes() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/products/:id" element={<ProductDetailPage />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/checkout" element={<CheckoutPage />} />
+        <Route path="/cart" element={<ProtectedRoute allowedRoles={['BUYER']}><CartPage /></ProtectedRoute>} />
+        <Route path="/checkout" element={<ProtectedRoute allowedRoles={['BUYER']}><CheckoutPage /></ProtectedRoute>} />
+        <Route path="/orders" element={<ProtectedRoute allowedRoles={['BUYER']}><OrdersPage /></ProtectedRoute>} />
 
         <Route path="/seller" element={<ProtectedRoute allowedRoles={['SELLER']}><SellerDashboard /></ProtectedRoute>} />
         <Route path="/buyer" element={<ProtectedRoute allowedRoles={['BUYER']}><BuyerDashboard /></ProtectedRoute>} />

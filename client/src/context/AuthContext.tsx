@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshUser = async () => {
-    const token = localStorage.getItem('weaveshare-token');
+    const token = localStorage.getItem('token');
     if (!token) {
       setUser(null);
       setLoading(false);
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data } = await api.get('/auth/me');
       setUser(data.user);
     } catch {
-      localStorage.removeItem('weaveshare-token');
+      localStorage.removeItem('token');
       setUser(null);
     } finally {
       setLoading(false);
@@ -53,13 +53,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string, role: Role) => {
     const { data } = await api.post('/auth/login', { email, password, role });
-    localStorage.setItem('weaveshare-token', data.token);
+    // FIX: Save the token returned by the login controller.
+    localStorage.setItem('token', data.token);
     setUser(data.user);
   };
 
   const register = async (payload: any) => {
     const { data } = await api.post('/auth/register', payload);
-    localStorage.setItem('weaveshare-token', data.token);
+    localStorage.setItem('token', data.token);
     setUser(data.user);
   };
 
@@ -69,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore
     }
-    localStorage.removeItem('weaveshare-token');
+    localStorage.removeItem('token');
     setUser(null);
   };
 

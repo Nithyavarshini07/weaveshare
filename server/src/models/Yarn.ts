@@ -11,7 +11,7 @@ const yarnSchema = new Schema({
   condition: { type: String, enum: ['NEW_LEFTOVER', 'GOOD', 'USED', 'MIXED'], required: true },
   description: { type: String, required: true },
   location: { type: String, required: true },
-  images: { type: [String], default: [] },
+  imageUrls: { type: [String], default: [] },
   basePricePerKg: { type: Number, required: true },
   qualityMultiplier: { type: Number, required: true },
   suggestedPrice: { type: Number, required: true },
@@ -19,5 +19,4 @@ const yarnSchema = new Schema({
   status: { type: String, enum: ['AVAILABLE', 'RESERVED', 'SOLD'], default: 'AVAILABLE' },
 }, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
 
-yarnSchema.virtual('imageUrls').get(function (this: { images: string[] }) { return this.images; });
 export default mongoose.model('Yarn', yarnSchema);
