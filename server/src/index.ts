@@ -38,11 +38,6 @@ const allowedOrigins = [
 
 // ---------- UPLOAD DIR + PUBLIC URL PREFIX ----------
 // Multer saves to: <cwd>/uploads/yarn/<filename>
-// We serve that at: http://localhost:5000/uploads/yarn/<filename>
-const uploadDir = path.join(process.cwd(), 'uploads', 'yarn');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-// Public URL prefix used when storing imageUrls in the DB
 const PUBLIC_UPLOAD_PREFIX = '/uploads/yarn';
 
 // ---------- MIDDLEWARE ----------
@@ -52,8 +47,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
 // Serve uploaded files. Two mounts so both old and new paths work.
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-app.use('/uploads/yarn', express.static(uploadDir));
 
 // ---------- HELPERS ----------
 const userView = (user: any) => ({
