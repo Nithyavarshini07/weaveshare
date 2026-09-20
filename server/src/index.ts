@@ -10,7 +10,11 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { isValidObjectId } from 'mongoose';
 import { upload } from './lib/upload.js';
-import { connectDatabase, databaseStatus } from './config/db.js';
+import {
+  connectDatabase,
+  databaseStatus,
+  databaseErrorMessage,
+} from './config/db.js';
 import User from './models/User.js';
 import Yarn from './models/Yarn.js';
 import Cart from './models/Cart.js';
@@ -94,7 +98,12 @@ async function addReviewStats<T extends { _id: unknown }>(yarns: T[]) {
 
 // ---------- HEALTH ----------
 app.get('/api/health', (_req, res) =>
-  res.json({ ok: true, message: 'WeaveShare server is running', database: databaseStatus() })
+  res.json({
+    ok: true,
+    message: 'WeaveShare server is running',
+    database: databaseStatus(),
+    databaseError: databaseErrorMessage(),
+  })
 );
 
 // ---------- AUTH ----------
