@@ -628,7 +628,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) =>
   res.status(400).json({ message: err?.message || 'Unexpected error.' })
 );
 
-connectDatabase();
+connectDatabase()
+  .then(() => console.log('Database initialization completed'))
+  .catch((error) => console.error('Database initialization failed:', error));
 
 export default app;
 
