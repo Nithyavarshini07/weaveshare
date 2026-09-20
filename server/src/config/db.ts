@@ -3,7 +3,11 @@ import mongoose from 'mongoose';
 let databaseError = '';
 
 export async function connectDatabase() {
-  const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/weaveshare';
+  const uri = process.env.MONGODB_URI;
+
+if (!uri) {
+  throw new Error('MONGODB_URI is missing');
+}
 
   try {
     await mongoose.connect(uri);
