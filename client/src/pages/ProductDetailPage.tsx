@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { ArrowLeft, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, MessageCircle, ShoppingCart } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import api, { resolveImageUrl } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 import StarRating from '../components/StarRating';
 import { timeAgo } from '../lib/timeAgo';
 
@@ -43,6 +44,7 @@ export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [item, setItem] = useState<Yarn | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -159,7 +161,7 @@ export default function ProductDetailPage() {
               <h1 className="mt-4 text-4xl font-black text-brand-dark">{item.name}</h1>
               <div className="mt-6 space-y-2 text-slate-600"><div>Color: {item.color}</div><div>Weight: {item.weight} {item.weightUnit}</div><div>Condition: {item.condition}</div><div>Seller: {seller?.name || 'Unknown seller'}</div><div>Location: {item.location}</div><div>Price: ₹{item.finalPrice}</div><div>Price per kg: ₹{item.basePricePerKg}</div></div>
               <p className="mt-5 text-slate-600">{item.description}</p>
-              <div className="mt-6 flex flex-wrap gap-3"><button onClick={handleAddToCart} className="primary-btn gap-2"><ShoppingCart size={16} /> ADD TO CART</button><button onClick={() => navigate('/checkout')} className="secondary-btn">BUY NOW</button></div>
+              <div className="mt-6 flex flex-wrap gap-3"><button onClick={handleAddToCart} className="primary-btn gap-2"><ShoppingCart size={16} /> ADD TO CART</button>{user?.role === 'BUYER' && <button type="button" onClick={() => navigate(`/chat/mock-${item._id || item.id}`)} className="secondary-btn flex items-center gap-2 px-4 py-2"><MessageCircle size={18} />{t('chat.messageSeller')}</button>}<button onClick={() => navigate('/checkout')} className="secondary-btn">BUY NOW</button></div>
 
               <section id="reviews" className="mt-10 border-t border-slate-100 pt-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">

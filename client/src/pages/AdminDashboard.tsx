@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import api from '../lib/api';
+import EcoImpactPanel from '../components/EcoImpactPanel';
+import { computePlatformEcoStats, getPlatformMonthlyImpact } from '../lib/mockEco';
 
 export default function AdminDashboard() {
+  const { t } = useTranslation();
   const [users, setUsers] = useState<any[]>([]);
   const [listings, setListings] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -14,11 +18,17 @@ export default function AdminDashboard() {
     });
   }, []);
 
+  const ecoStats = useMemo(
+    () => computePlatformEcoStats(listings, orders),
+    [listings, orders]
+  );
+  const monthlyImpact = useMemo(() => getPlatformMonthlyImpact(), []);
+
   return (
     <div className="min-h-screen bg-[#dfeef0] p-4 md:p-6">
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 card-shell p-5">
-          <h1 className="text-3xl font-black text-brand-dark">Admin Dashboard</h1>
+          <h1 className="text-3xl font-black text-brand-dark">{t('admin.title')}</h1>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
@@ -35,6 +45,14 @@ export default function AdminDashboard() {
               <div className="mt-2 text-2xl font-black text-brand-dark">{String(value)}</div>
             </div>
           ))}
+        </div>
+
+        <div className="mt-8">
+          <EcoImpactPanel
+            stats={ecoStats}
+            monthly={monthlyImpact}
+            variant="admin"
+          />
         </div>
 
         <div className="mt-8 grid gap-6 lg:grid-cols-3">

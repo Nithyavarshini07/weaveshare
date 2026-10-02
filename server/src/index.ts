@@ -1,9 +1,10 @@
-import 'dotenv/config';
+import './env.js';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import fs from 'fs';
 
 import bcrypt from 'bcryptjs';
@@ -50,7 +51,15 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
-// Serve uploaded files. Two mounts so both old and new paths work.
+// ---------- STATIC UPLOADS ----------
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const yarnUploadsDir = path.resolve(__dirname, '../uploads/yarn');
+const allUploadsDir = path.resolve(__dirname, '../uploads');
+
+fs.mkdirSync(yarnUploadsDir, { recursive: true });
+
+app.use('/uploads/yarn', express.static(yarnUploadsDir));
+app.use('/uploads', express.static(allUploadsDir));
 
 // ---------- HELPERS ----------
 const userView = (user: any) => ({
